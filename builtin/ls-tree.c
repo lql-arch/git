@@ -61,25 +61,35 @@ static int show_recursive(const char *base, size_t baselen, const char *pathname
 	return 0;
 }
 
+static void init_type(unsigned mode, enum object_type *type)
+{
+	if (S_ISGITLINK(mode))
+		*type = OBJ_COMMIT;
+	else if (S_ISDIR(mode))
+		*type = OBJ_TREE;
+}
+
+static void init_recursive(struct strbuf *base, const char *pathname,
+				int *recursive)
+{
+	if (show_recursive(base->buf, base->len, pathname))
+		*recursive = READ_TREE_RECURSIVE;
+}
+
 static int show_tree(const struct object_id *oid, struct strbuf *base,
 		const char *pathname, unsigned mode, void *context)
 {
-	int retval = 0;
+	int recursive = 0;
 	size_t baselen;
 	enum object_type type = OBJ_BLOB;
 
-	if (S_ISGITLINK(mode)) {
-		type = OBJ_COMMIT;
-	} else if (S_ISDIR(mode)) {
-		if (show_recursive(base->buf, base->len, pathname)) {
-			retval = READ_TREE_RECURSIVE;
-			if (!(ls_options & LS_SHOW_TREES))
-				return retval;
-		}
-		type = OBJ_TREE;
-	}
-	else if (ls_options & LS_TREE_ONLY)
-		return 0;
+	init_type(mode, &type);
+	init_recursive(base, pathname, &recursive);
+
+	if (type == OBJ_TREE && recursive && !(ls_options & LS_SHOW_TREES))
+		return recursive;
+	if (type == OBJ_BLOB && (ls_options & LS_TREE_ONLY))
+		return !READ_TREE_RECURSIVE;
 
 	if (!(ls_options & LS_NAME_ONLY)) {
 		if (ls_options & LS_SHOW_SIZE) {
@@ -109,7 +119,7 @@ static int show_tree(const struct object_id *oid, struct strbuf *base,
 				   chomp_prefix ? ls_tree_prefix : NULL,
 				   stdout, line_termination);
 	strbuf_setlen(base, baselen);
-	return retval;
+	return recursive;
 }
 
 int cmd_ls_tree(int argc, const char **argv, const char *prefix)
